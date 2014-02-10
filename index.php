@@ -134,42 +134,36 @@
 			$insert_into_prior_santa = array();
 
 			//UPDATE NUMBER YEARS
-			$query = "UPDATE santa_pairs SET years=years+1";
+			$query = "UPDATE prior_pairs SET years=years+1";
 
 			$db_manager->query($query, $bindParam->get());
-			// if($db_manager->query($query, $bindParam->get())) {
-			// 	$response['response'] = "Success";
-			// } else {
-			// 	$response['response'] = "Error: Could not delete user.";
-			// }
 
 			//ALLOW SANTA-GIFTEE PAIR IF OVER THREE YEARS
-			$query = "DELETE FROM santa_pairs WHERE years > 3";
+			$query = "DELETE FROM prior_pairs WHERE years > 3";
 
 			$db_manager->query($query, $bindParam->get());
-			// if($db_manager->query($query, $bindParam->get())) {
-			// 	$response['response'] = "Success";
-			// } else {
-			// 	$response['response'] = "Error: Could not delete user.";
-			// }
 
 			//GET PRIOR SANTAS
-			// $query = "SELECT santa,giftee,years FROM santa_pairs";
+			$query = "SELECT santa,giftee,years FROM prior_pairs";
 
-			// $result = $db_manager->queryForResult($query, $bindParam->get());
+			$result = $db_manager->queryForResult($query, $bindParam->get());
 
-			// if($result) {
+			if($result) {
 
-			// 	$result->bind_result($santa, $giftee, $years);
+				$result->bind_result($santa, $giftee, $years);
 
-			// 	while($result->fetch()) {
-			// 		if(!isset($prior_pairs[$santa])) {
-			// 			$prior_pairs[$santa] = array($giftee);
-			// 		} else {
-			// 			array_push($prior_pairs[$santa], $giftee);
-			// 		}
-			// 	}
-			// }
+				while($result->fetch()) {
+					if(!isset($prior_pairs[$santa])) {
+						$prior_pairs[$santa] = array($giftee);
+					} else {
+						array_push($prior_pairs[$santa], $giftee);
+					}
+				}
+
+				unset($santa);
+				unset($giftee);
+				unset($result);
+			}
 
 			$query = "SELECT id,name,relationship FROM santas ORDER BY RAND()";
 
@@ -188,16 +182,18 @@
 				}
 			}
 
-			$potential_giftee = $users;
-			$pairs = array();
-
-			//Create two lists
+			
+			//Create another list
 			//Loop through one list and select random indexed
 			//person from the second list
+			$potential_giftee = $users;
+			$pairs = array();
 			foreach($users as $santa) {
 
 				$rand = rand(0, count($potential_giftee)-1);
 				$hasGiftee = false;
+
+				$max = 0;
 
 				while(!$hasGiftee) {
 					$giftee = $potential_giftee[$rand];
@@ -207,26 +203,47 @@
 							unset($potential_giftee[$rand]);
 							$potential_giftee = array_values($potential_giftee);
 							$hasGiftee = true;
+						} else {
+							//maybe size of list greater than 1 but only other person available
+							//you have been paired in last three years so go find a switch
+							foreach ($pairs as $key => $value) {
+								$switch = $value['giftee'];
+								$switch_santa = $value['santa'];
+								if((!isset($prior_pairs[$santa->getId()]) || !in_array($switch->getId(), $prior_pairs[$santa->getId()])) && 
+								   (!isset($prior_pairs[$switch_santa->getId()]) || !in_array($santa->getId(), $prior_pairs[$switch_santa->getId()]))
+								   && $switch->getId() != $santa->getId()) {
+									$pairs[$key]['giftee'] = $santa;
+									$hasGiftee = true;
+									array_push($pairs, array("santa" => $santa, "giftee" => $switch));
+									unset($potential_giftee[$rand]);
+									$potential_giftee = array_values($potential_giftee);
+									break;
+								}
+							}
 						}
 					} else if(count($potential_giftee) == 1) {
-						//means you are stuck with yourself
-						//go switch with someone
-						$switch;
+						//if you are only one left go find a switch
 						foreach ($pairs as $key => $value) {
 							$switch = $value['giftee'];
-							$pairsp[$key]['giftee'] = $santa;
-							$hasGiftee = true;
-							break;
+							$switch_santa = $value['santa'];
+							if((!isset($prior_pairs[$santa->getId()]) || !in_array($switch->getId(), $prior_pairs[$santa->getId()])) && 
+							   (!isset($prior_pairs[$switch_santa->getId()]) || !in_array($santa->getId(), $prior_pairs[$switch_santa->getId()]))) {
+								$pairs[$key]['giftee'] = $santa;
+								$hasGiftee = true;
+								array_push($pairs, array("santa" => $santa, "giftee" => $switch));
+								unset($potential_giftee[$rand]);
+								$potential_giftee = array_values($potential_giftee);
+								break;
+							}
 						}
-						array_push($pairs, array("santa" => $santa, "giftee" => $switch));
-						unset($potential_giftee[$rand]);
 					}
 
-					if($max > 50) { echo "YOLOBRO\n"; exit(); }
-
-					$max+=1;
-
 					$rand = rand(0, count($potential_giftee)-1);
+					// if($max > 50) { 
+					// 	echo "YOLO\n";
+					// 	exit();
+					// }
+					// echo json_encode($pairs) . "\n";
 				}
 			}
 
@@ -237,6 +254,13 @@
 				array_push($response['data'] 
 						   ,array("santa" => $santa->getName()
 								  ,"giftee" => $giftee->getName()));
+
+				//TODO: SHOULD BE CHECKED FOR EXCEPTION
+				$bindParam = new BindParam();
+				$query = "INSERT INTO prior_pairs(santa, giftee) VALUES(?,?)";
+				$bindParam->add('i', $santa->getId());
+				$bindParam->add('i', $giftee->getId());
+				$db_manager->query($query, $bindParam->get());
 			}
 
 			break;
